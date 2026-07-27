@@ -121,6 +121,8 @@ stdenv.mkDerivation rec {
     })
   ];
 
+  passthru.updateScript = ./update.sh;
+
   meta = {
     description = "Privacy-focused browser based on ungoogled Chromium";
     homepage = "https://helium.computer/";
