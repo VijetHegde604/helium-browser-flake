@@ -20,8 +20,10 @@
           pkgs = import nixpkgs {
             inherit system;
           };
-        in {
-          default = pkgs.callPackage ./package.nix {};
+        in rec {
+          default = helium-browser;
+          helium-browser = pkgs.callPackage ./package.nix {};
+          helium = helium-browser;
         });
 
       apps = forAllSystems (system: {
