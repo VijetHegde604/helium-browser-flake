@@ -2,79 +2,68 @@
 set -euo pipefail
 
 repo="imputnet/helium-linux"
-package_file="package.nix"
+package_file="${PACKAGE_NIX:-package.nix}"
+api_url="https://api.github.com/repos/${repo}/releases/latest"
 
 if [[ ! -f "$package_file" ]]; then
-  echo "error: run this script from the repository root" >&2
+  echo "error: cannot find $package_file; run from the flake root or set PACKAGE_NIX" >&2
   exit 1
 fi
 
-require_cmd() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "error: required command not found: $1" >&2
-    exit 1
-  fi
-}
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "error: python3 is required to update package.nix" >&2
+  exit 1
+fi
 
-require_cmd curl
-require_cmd python3
-require_cmd nix
+if command -v curl >/dev/null 2>&1; then
+  release_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$api_url")"
+elif command -v python3 >/dev/null 2>&1; then
+  release_json="$(python3 - "$api_url" <<'PY'
+import sys, urllib.request
+req = urllib.request.Request(sys.argv[1], headers={"Accept": "application/vnd.github+json"})
+with urllib.request.urlopen(req) as response:
+    print(response.read().decode())
+PY
+)"
+else
+  echo "error: curl or python3 is required to query GitHub releases" >&2
+  exit 1
+fi
 
-latest_json="$(curl --fail --location --silent --show-error \
-  --header "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/${repo}/releases/latest")"
-
-tag="$(LATEST_JSON="$latest_json" python3 - <<'PY'
-import json
-import os
-
-release = json.loads(os.environ["LATEST_JSON"])
-tag = release.get("tag_name")
-if not tag:
-    raise SystemExit("latest release response did not contain tag_name")
-print(tag)
+version="$(RELEASE_JSON="$release_json" python3 - <<'PY'
+import json, os
+print(json.loads(os.environ["RELEASE_JSON"])["tag_name"].lstrip("v"))
 PY
 )"
 
-version="${tag#v}"
-asset_name="helium-${version}-x86_64_linux.tar.xz"
-asset_url="https://github.com/${repo}/releases/download/${tag}/${asset_name}"
+asset="helium-${version}-x86_64_linux.tar.xz"
+url="https://github.com/${repo}/releases/download/${version}/${asset}"
 
-prefetch_json="$(nix store prefetch-file --json --hash-type sha256 "$asset_url")"
-hash="$(PREFETCH_JSON="$prefetch_json" python3 - <<'PY'
-import json
-import os
-
-prefetch = json.loads(os.environ["PREFETCH_JSON"])
-hash_value = prefetch.get("hash")
-if not hash_value:
-    raise SystemExit("prefetch response did not contain hash")
-print(hash_value)
+if command -v nix >/dev/null 2>&1 && nix store prefetch-file --help >/dev/null 2>&1; then
+  prefetch_json="$(nix store prefetch-file --json --hash-type sha256 "$url")"
+  hash="$(PREFETCH_JSON="$prefetch_json" python3 - <<'PY'
+import json, os
+print(json.loads(os.environ["PREFETCH_JSON"])["hash"])
 PY
 )"
+elif command -v nix-prefetch-url >/dev/null 2>&1 && command -v nix >/dev/null 2>&1; then
+  raw_hash="$(nix-prefetch-url --type sha256 "$url")"
+  hash="$(nix hash convert --hash-algo sha256 --to sri "$raw_hash")"
+else
+  echo "error: nix store prefetch-file or nix-prefetch-url plus nix is required" >&2
+  exit 1
+fi
 
-VERSION="$version" HASH="$hash" python3 - <<'PY'
+python3 - "$package_file" "$version" "$hash" <<'PY'
 from pathlib import Path
-import os
-import re
-
-path = Path("package.nix")
+import re, sys
+path = Path(sys.argv[1])
+version = sys.argv[2]
+hash_ = sys.argv[3]
 text = path.read_text()
-text, version_count = re.subn(
-    r'(version = ")[^"]+(";)',
-    rf'\g<1>{os.environ["VERSION"]}\2',
-    text,
-    count=1,
-)
-text, hash_count = re.subn(
-    r'(hash = ")[^"]+(";)',
-    rf'\g<1>{os.environ["HASH"]}\2',
-    text,
-    count=1,
-)
-if version_count != 1 or hash_count != 1:
-    raise SystemExit("failed to update exactly one version and one hash field")
+text = re.sub(r'version = "[^"]+";', f'version = "{version}";', text, count=1)
+text = re.sub(r'hash = "sha256-[^"]+";', f'hash = "{hash_}";', text, count=1)
 path.write_text(text)
 PY
 
-printf 'Updated %s to version %s with hash %s\n' "$package_file" "$version" "$hash"
+echo "Updated ${package_file} to Helium ${version} (${hash})"

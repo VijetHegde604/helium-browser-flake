@@ -1,5 +1,5 @@
 {
-  description = "Helium Browser";
+  description = "Helium Browser packaged for Nix";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -8,28 +8,26 @@
   outputs = { self, nixpkgs }:
     let
       lib = nixpkgs.lib;
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-
+      systems = [ "x86_64-linux" ];
       forAllSystems = lib.genAttrs systems;
-    in {
+    in
+    {
       packages = forAllSystems (system:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-          };
-        in rec {
-          default = helium-browser;
-          helium-browser = pkgs.callPackage ./package.nix {};
-          helium = helium-browser;
+          pkgs = import nixpkgs { inherit system; };
+          helium = pkgs.callPackage ./package.nix { };
+        in
+        {
+          default = helium;
+          helium-browser = helium;
+          helium = helium;
         });
 
       apps = forAllSystems (system: {
-        default = {
+        default = self.apps.${system}.helium;
+        helium = {
           type = "app";
-          program = "${self.packages.${system}.default}/bin/helium";
+          program = lib.getExe self.packages.${system}.default;
         };
       });
 
@@ -37,7 +35,6 @@
         let
           pkgs = import nixpkgs { inherit system; };
         in
-          pkgs.nixfmt-rfc-style
-      );
+        pkgs.nixfmt-rfc-style);
     };
 }
