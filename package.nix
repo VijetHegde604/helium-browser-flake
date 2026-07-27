@@ -4,10 +4,6 @@
   fetchurl,
   makeWrapper,
   autoPatchelfHook,
-  copyDesktopItems,
-  wrapGAppsHook3,
-  makeDesktopItem,
-
   alsa-lib,
   at-spi2-atk,
   at-spi2-core,
@@ -43,8 +39,21 @@
   xorg,
 }:
 
-let
-  runtimeLibs = [
+stdenv.mkDerivation rec {
+  pname = "helium";
+  version = "0.14.9.1";
+
+  src = fetchurl {
+    url = "https://github.com/imputnet/helium-linux/releases/download/${version}/helium-${version}-x86_64_linux.tar.xz";
+    hash = "sha256-BmYX3xKpzVsyxRxmypMpXRnp6+Z5wLcaEY8aEYN+Zz0=";
+  };
+
+  nativeBuildInputs = [
+    autoPatchelfHook
+    makeWrapper
+  ];
+
+  buildInputs = [
     alsa-lib
     at-spi2-atk
     at-spi2-core
@@ -128,41 +137,72 @@ stdenv.mkDerivation rec {
       --prefix GIO_EXTRA_MODULES : "${glib-networking}/lib/gio/modules:${dconf}/lib/gio/modules" \
       --add-flags "--ozone-platform-hint=auto"
 
-    # Helium ships Chromium's chrome-sandbox helper, but this derivation does
-    # not install it setuid. NixOS users should rely on the system Chromium
-    # sandbox support configured by their profile/system rather than a package
-    # local setuid helper.
-    #
-    # GPU behavior is intentionally limited to the upstream Ozone auto-detection
-    # flag above. We expose Vulkan/VA-API/GBM libraries for Chromium's runtime
-    # probes, but do not force feature flags that can vary by driver/session.
+    for icon in $out/opt/helium/product_logo_*.png; do
+      [ -e "$icon" ] || continue
+      size="''${icon##*_}"
+      size="''${size%.png}"
+      case "$size" in
+        [0-9]* ) ;;
+        * ) continue ;;
+      esac
 
-    mkdir -p $out/share/icons/hicolor/256x256/apps
-    cp $out/opt/helium/product_logo_256.png \
-      $out/share/icons/hicolor/256x256/apps/helium.png
+      install -Dm644 "$icon" \
+        "$out/share/icons/hicolor/''${size}x''${size}/apps/helium.png"
+    done
+
+    mkdir -p $out/share/applications
+    upstreamDesktop="$(find $out/opt/helium -name '*.desktop' -print -quit)"
+    if [ -n "$upstreamDesktop" ]; then
+      install -Dm644 "$upstreamDesktop" $out/share/applications/helium.desktop
+      sed -i -E \
+        -e '0,/^Exec=/{s|^Exec=.*|Exec=helium %U|}' \
+        -e '0,/^Icon=/{s|^Icon=.*|Icon=helium|}' \
+        $out/share/applications/helium.desktop
+      if ! grep -q '^StartupWMClass=' $out/share/applications/helium.desktop; then
+        awk '
+          /^\[Desktop Action / && ! inserted {
+            print "StartupWMClass=Helium"
+            inserted = 1
+          }
+          { print }
+          END {
+            if (! inserted) {
+              print "StartupWMClass=Helium"
+            }
+          }
+        ' $out/share/applications/helium.desktop > $out/share/applications/helium.desktop.tmp
+        mv $out/share/applications/helium.desktop.tmp $out/share/applications/helium.desktop
+      fi
+    else
+      cat > $out/share/applications/helium.desktop <<EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Helium
+GenericName=Web Browser
+Comment=Access the Internet
+Exec=helium %U
+Terminal=false
+Icon=helium
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;application/xml;application/rss+xml;application/rdf+xml;image/gif;image/jpeg;image/png;image/webp;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true
+StartupWMClass=Helium
+Keywords=browser;internet;web;www;
+Actions=new-window;new-private-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=helium --new-window %U
+
+[Desktop Action new-private-window]
+Name=New Private Window
+Exec=helium --incognito %U
+EOF
+    fi
 
     runHook postInstall
   '';
-
-  desktopItems = [
-    (makeDesktopItem {
-      name = "helium";
-      desktopName = "Helium";
-      exec = "helium %U";
-      icon = "helium";
-      categories = [
-        "Network"
-        "WebBrowser"
-      ];
-      mimeTypes = [
-        "x-scheme-handler/http"
-        "x-scheme-handler/https"
-        "text/html"
-      ];
-    })
-  ];
-
-  passthru.updateScript = ./update.sh;
 
   meta = {
     description = "Privacy-focused browser based on ungoogled Chromium";
