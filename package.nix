@@ -33,7 +33,7 @@
 }:
 
 stdenv.mkDerivation rec {
-  pname = "helium";
+  pname = "helium-browser";
   version = "0.14.9.1";
 
   src = fetchurl {
