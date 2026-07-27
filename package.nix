@@ -4,9 +4,6 @@
   fetchurl,
   makeWrapper,
   autoPatchelfHook,
-  copyDesktopItems,
-  makeDesktopItem,
-
   alsa-lib,
   at-spi2-atk,
   at-spi2-core,
@@ -14,11 +11,14 @@
   cairo,
   cups,
   dbus,
+  dconf,
   expat,
   fontconfig,
   freetype,
   gdk-pixbuf,
   glib,
+  glib-networking,
+  gsettings-desktop-schemas,
   gtk3,
   libGL,
   libdrm,
@@ -30,6 +30,7 @@
   nspr,
   nss,
   pango,
+  pciutils,
   pipewire,
   systemd,
   wayland,
@@ -48,11 +49,14 @@ let
     cairo
     cups
     dbus
+    dconf
     expat
     fontconfig
     freetype
     gdk-pixbuf
     glib
+    glib-networking
+    gsettings-desktop-schemas
     gtk3
     libGL
     libdrm
@@ -64,10 +68,32 @@ let
     nspr
     nss
     pango
+    pciutils
     pipewire
     systemd
     wayland
+  ];
+in
 
+stdenv.mkDerivation rec {
+  pname = "helium";
+  version = "0.14.9.1";
+
+  src = fetchurl {
+    url = "https://github.com/imputnet/helium-linux/releases/download/${version}/helium-${version}-x86_64_linux.tar.xz";
+    hash = "sha256-BmYX3xKpzVsyxRxmypMpXRnp6+Z5wLcaEY8aEYN+Zz0=";
+  };
+
+  nativeBuildInputs = [
+    autoPatchelfHook
+    makeWrapper
+    copyDesktopItems
+    wrapGAppsHook3
+  ];
+
+  dontWrapGApps = true;
+
+  buildInputs = runtimeLibs ++ [
     xorg.libX11
     xorg.libXScrnSaver
     xorg.libXcomposite
