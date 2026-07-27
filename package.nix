@@ -5,26 +5,36 @@
   makeWrapper,
   autoPatchelfHook,
   alsa-lib,
+  at-spi2-atk,
+  at-spi2-core,
   atk,
   cairo,
   cups,
   dbus,
+  dconf,
   expat,
   fontconfig,
   freetype,
   gdk-pixbuf,
   glib,
+  glib-networking,
+  gsettings-desktop-schemas,
   gtk3,
   libGL,
   libdrm,
   libgbm,
   libnotify,
+  libsecret,
+  libva,
   libxkbcommon,
   mesa,
   nspr,
   nss,
   pango,
+  pciutils,
   pipewire,
+  systemd,
+  vulkan-loader,
   wayland,
   xorg,
 }:
@@ -45,28 +55,59 @@ stdenv.mkDerivation rec {
 
   buildInputs = [
     alsa-lib
+    at-spi2-atk
+    at-spi2-core
     atk
     cairo
     cups
     dbus
+    dconf
     expat
     fontconfig
     freetype
     gdk-pixbuf
     glib
+    glib-networking
+    gsettings-desktop-schemas
     gtk3
     libGL
     libdrm
     libgbm
     libnotify
+    libsecret
+    libva
     libxkbcommon
     mesa
     nspr
     nss
     pango
+    pciutils
     pipewire
+    systemd
+    vulkan-loader
     wayland
+  ];
+in
 
+stdenv.mkDerivation rec {
+  pname = "helium";
+  version = "0.14.9.1";
+
+  src = fetchurl {
+    url = "https://github.com/imputnet/helium-linux/releases/download/${version}/helium-${version}-x86_64_linux.tar.xz";
+    hash = "sha256-BmYX3xKpzVsyxRxmypMpXRnp6+Z5wLcaEY8aEYN+Zz0=";
+  };
+
+  nativeBuildInputs = [
+    autoPatchelfHook
+    makeWrapper
+    copyDesktopItems
+    wrapGAppsHook3
+  ];
+
+  dontWrapGApps = true;
+
+  buildInputs = runtimeLibs ++ [
     xorg.libX11
     xorg.libXcomposite
     xorg.libXcursor
@@ -90,6 +131,10 @@ stdenv.mkDerivation rec {
 
     makeWrapper $out/opt/helium/helium \
       $out/bin/helium \
+      "${gappsWrapperArgs[@]}" \
+      --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath runtimeLibs} \
+      --prefix XDG_DATA_DIRS : "$out/share:${gsettings-desktop-schemas}/share:${gtk3}/share" \
+      --prefix GIO_EXTRA_MODULES : "${glib-networking}/lib/gio/modules:${dconf}/lib/gio/modules" \
       --add-flags "--ozone-platform-hint=auto"
 
     for icon in $out/opt/helium/product_logo_*.png; do
